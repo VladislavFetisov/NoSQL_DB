@@ -12,10 +12,11 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-
-import static lsm.dao.LsmDao.logger;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class Utils {
 
@@ -23,8 +24,8 @@ public final class Utils {
 
     }
 
-    private static long sizeOfEntry(Entry<MemorySegment> entry) {
-        long valueSize = (entry.value() == null) ? 0 : entry.value().byteSize();
+    public static long sizeOfEntry(Entry<MemorySegment> entry) {
+        long valueSize = entry.isTombstone() ? 0 : entry.value().byteSize();
         return 2L * Long.BYTES + entry.key().byteSize() + valueSize;
     }
 
@@ -114,12 +115,9 @@ public final class Utils {
         return path.resolveSibling(path.getFileName() + suffix);
     }
 
-    public static boolean isTombstone(Entry<MemorySegment> entry) {
-        return entry.value() == null;
-    }
-
-    public static void deleteTables(List<SSTable> tableList) throws IOException {
-        for (SSTable table : tableList) {
+    public static void deleteTablesToIndex(List<SSTable> tableList, int toIndex) throws IOException {
+        for (int i = 0; i < toIndex; i++) {
+            SSTable table = tableList.get(i);
             Files.deleteIfExists(table.getTableName());
             Files.deleteIfExists(table.getIndexName());
         }
@@ -135,11 +133,42 @@ public final class Utils {
         return new SSTable.Sizes(tableSize, count * Long.BYTES);
     }
 
-    public static void checkMemory() {
-        long usedMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-        logger.info("memory use: {}", usedMemory / 1024L);
-        long free = Runtime.getRuntime().maxMemory() - usedMemory;
-        logger.info("free: {}", free / 1024L);
-        logger.info("all {}", (usedMemory + free) / 1024L);
+    public static String removeSuffix(String source, String suffix) {
+        return source.substring(0, source.length() - suffix.length());
+    }
+
+    public static Iterator<Entry<MemorySegment>> tablesRange(
+            MemorySegment from, MemorySegment to, List<SSTable> tables) {
+        List<Iterator<Entry<MemorySegment>>> iterators = new ArrayList<>(tables.size());
+        for (SSTable table : tables) {
+            iterators.add(table.range(from, to));
+        }
+        return CustomIterators.merge(iterators);
+    }
+
+    public static long getLastTableNum(List<SSTable> ssTables) {
+        String lastTable = ssTables.get(ssTables.size() - 1).getTableName().getFileName().toString();
+        if (lastTable.endsWith(SSTable.COMPACTED)) {
+            lastTable = Utils.removeSuffix(lastTable, SSTable.COMPACTED);
+        }
+        return Long.parseLong(lastTable) + 1;
+    }
+
+    public static Iterator<Entry<MemorySegment>> tablesFilteredFullRange(List<SSTable> fixed) {
+        Iterator<Entry<MemorySegment>> discIterator = Utils.tablesRange(null, null, fixed);
+        PeekingIterator<Entry<MemorySegment>> iterator = new PeekingIterator<>(discIterator);
+        return CustomIterators.skipTombstones(iterator);
+    }
+
+    public static void shutdownExecutor(ExecutorService service) {
+        service.shutdown();
+        try {
+            if (!service.awaitTermination(1, TimeUnit.HOURS)) {
+                throw new IllegalStateException("Cant await termination");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LsmDao.logger.error("Cant await termination", e);
+        }
     }
 }

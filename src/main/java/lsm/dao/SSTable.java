@@ -8,56 +8,100 @@ import lsm.Entry;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.ref.Cleaner;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static lsm.dao.LsmDao.logger;
 
 public final class SSTable implements Closeable {
     public static final int NULL_VALUE = -1;
     public static final String TEMP = "_tmp";
     public static final String INDEX = "_i";
+    public static final String COMPACTED = "_compacted";
     private final MemorySegment mapFile;
     private final MemorySegment mapIndex;
     private final Path tableName;
     private final Path indexName;
     private final ResourceScope sharedScope;
 
-    public Path getTableName() {
-        return tableName;
-    }
+    private static final Cleaner cleaner = Cleaner.create(r -> {
+        Thread cleanerThread = new Thread(r, "Cleaner thread");
+        cleanerThread.setDaemon(true);
+        return cleanerThread;
+    });
 
     public Path getIndexName() {
         return indexName;
     }
 
+    public Path getTableName() {
+        return tableName;
+    }
+
     private SSTable(Path tableName, Path indexName, long tableSize, long indexSize) throws IOException {
-        sharedScope = ResourceScope.newSharedScope();
+        sharedScope = ResourceScope.newSharedScope(cleaner);
         mapFile = Utils.map(tableName, tableSize, FileChannel.MapMode.READ_ONLY, sharedScope);
         this.tableName = tableName;
         mapIndex = Utils.map(indexName, indexSize, FileChannel.MapMode.READ_ONLY, sharedScope);
         this.indexName = indexName;
     }
 
-    public static List<SSTable> getAllTables(Path dir) {
+    public static Directory retrieveDir(Path dir) throws IOException {
         try (Stream<Path> files = Files.list(dir)) {
-            return files
-                    .filter(path -> {
-                        String s = path.toString();
-                        return !(s.endsWith(INDEX) || s.endsWith(TEMP));
-                    })
-                    .mapToInt(path -> Integer.parseInt(path.getFileName().toString()))
-                    .sorted()
-                    .mapToObj(i -> mapToTable(dir.resolve(String.valueOf(i))))
+            Set<Path> compactedTables = new HashSet<>();
+            List<Path> paths = sortPathsAndFindCompacted(dir, files, compactedTables);
+
+            int indexOfLastCompacted = lastCompactedIndex(compactedTables, paths);
+
+            List<SSTable> ssTables = paths
+                    .stream()
+                    .map(SSTable::mapToTable)
                     .toList();
-        } catch (IOException e) {
-            logger.info("No SSTables in directory");
-            return Collections.emptyList();
+            return new Directory(ssTables, indexOfLastCompacted);
         }
+    }
+
+    private static List<Path> sortPathsAndFindCompacted(Path dir, Stream<Path> files, Set<Path> compactedTables) {
+        return files
+                .filter(path -> {
+                    String s = path.toString();
+                    return !(s.endsWith(INDEX) || s.endsWith(TEMP));
+                })
+                .mapToInt(path -> processFileName(compactedTables, path))
+                .sorted()
+                .mapToObj(i -> dir.resolve(String.valueOf(i)))
+                .collect(Collectors.toList());
+    }
+
+    private static int processFileName(Set<Path> compactedTables, Path path) {
+        if (path.toString().endsWith(COMPACTED)) {
+            Path removedSuffix = Path.of(Utils.removeSuffix(path.toString(), COMPACTED));
+            compactedTables.add(removedSuffix);
+            return getTableNum(removedSuffix);
+        }
+        return getTableNum(path);
+    }
+
+    private static int lastCompactedIndex(Set<Path> compactedTables, List<Path> paths) {
+        int lastCompactedIndex = 0;
+        if (compactedTables.isEmpty()) {
+            return 0;
+        }
+        if (compactedTables.size() > 2) {
+            throw new IllegalStateException("compactedTables: " + compactedTables.size());
+        }
+        for (int i = 0; i < paths.size(); i++) {
+            Path path = paths.get(i);
+            if (compactedTables.contains(path)) {
+                lastCompactedIndex = i;
+                paths.set(i, Utils.withSuffix(path, COMPACTED));
+            }
+        }
+        return lastCompactedIndex;
     }
 
     private static SSTable mapToTable(Path path) {
@@ -127,12 +171,14 @@ public final class SSTable implements Closeable {
                 return Collections.emptyIterator();
             }
         }
+
         if (to != null) {
             ri = Utils.binarySearch(to, mapFile, mapIndex);
             if (ri == -1) {
                 return Collections.emptyIterator();
             }
         }
+
         long finalLi = li;
         long finalRi = ri;
         return new Iterator<>() {
@@ -160,6 +206,10 @@ public final class SSTable implements Closeable {
         sharedScope.close();
     }
 
+    public boolean isCompacted() {
+        return tableName.toString().endsWith(COMPACTED);
+    }
+
     /**
      * record Sizes contains tableSize-size of SSTable,
      * indexSize-size of indexTable.
@@ -167,4 +217,13 @@ public final class SSTable implements Closeable {
     public record Sizes(long tableSize, long indexSize) {
         //empty
     }
+
+    public record Directory(List<SSTable> ssTables, int indexOfLastCompacted) {
+        //empty
+    }
+
+    public static Integer getTableNum(Path path) {
+        return Integer.parseInt(path.getFileName().toString());
+    }
+
 }
