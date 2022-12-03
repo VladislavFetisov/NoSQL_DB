@@ -1,7 +1,5 @@
 package lsm;
 
-import lsm.Entry;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
