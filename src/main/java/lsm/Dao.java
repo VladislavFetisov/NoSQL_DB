@@ -1,5 +1,7 @@
 package lsm;
 
+import lsm.Entry;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
@@ -63,10 +65,17 @@ public interface Dao<D, E extends Entry<D>> extends Closeable {
      */
     void upsert(E entry);
 
-    /*
+    /**
      * Persists data (no-op by default).
      */
     default void flush() throws IOException {
+        // Do nothing
+    }
+
+    /**
+     * Compacts data (no-op by default).
+     */
+    default void compact() throws IOException {
         // Do nothing
     }
 
