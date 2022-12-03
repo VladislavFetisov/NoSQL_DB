@@ -1,0 +1,3 @@
+include 'java:main'
+findProject(':java:main')?.name = 'main'
+
