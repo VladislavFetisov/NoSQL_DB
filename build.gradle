@@ -3,6 +3,7 @@ plugins {
     id 'application'
     id 'net.ltgt.errorprone' version '2.0.2'
     id 'checkstyle'
+    id 'pmd'
 }
 
 java {
@@ -53,4 +54,11 @@ tasks.withType(JavaCompile) {
 
 tasks.withType(Test) {
     jvmArgs += incubatorArgs
+}
+pmd {
+    consoleOutput = true
+    toolVersion = "6.21.0"
+    ruleSets = []
+    ruleSetConfig = project.resources.text.fromFile("pmd.xml")
+    sourceSets = [sourceSets.main]
 }
