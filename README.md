@@ -1,4 +1,11 @@
 # NOSQL база данных
+Ветка `master`:
+[![Tests](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml)
+
+Ветка `develop`:
+[![Tests](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml/badge.svg?branch=develop)](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml)
+
+## Описание
 ## Описание 
 База данных, написанная на JAVA для хранения сроковых значений и выдача их по ключу
 ## Запуск
