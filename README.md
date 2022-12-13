@@ -1,6 +1,6 @@
 # NOSQL база данных
-Ветка `main`:
-[![Tests](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml)
+Ветка `master`:
+[![Tests](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml)
 
 Ветка `develop`:
 [![Tests](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml/badge.svg?branch=develop)](https://github.com/VladislavFetisov/NoSQL_DB/actions/workflows/tests.yml)
